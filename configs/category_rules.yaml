@@ -1,0 +1,20 @@
+map:
+  "genial|pix": services
+  "stark|transfeera": services
+  "marketing|ads|google|meta": marketing
+  "rent|alug": rent
+  "tax|irpj|csll|darf|gps": tax
+  "hotel|airbnb": hotels
+  "uber|99|cabify": transportation
+  "market|grocer|carrefour|pao de acucar|extra": groceries
+  "shein|clothing|roupa": clothing
+  "utilities|energia|luz|enel|eletro|water|agua": utilities
+  "amazon|magalu|mercado livre|retail": retail
+  "academy|courses|udemy|alura|education": education
+  "law|legal|advoc": "legal fees"
+
+status_map:
+  complete: Completed
+  completed: Completed
+  projected: Projected
+  pending: Projected

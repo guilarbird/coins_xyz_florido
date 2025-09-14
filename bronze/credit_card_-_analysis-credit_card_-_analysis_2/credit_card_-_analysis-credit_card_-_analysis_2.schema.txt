@@ -1,0 +1,7 @@
+credit: string
+card: string
+-: null
+analysis: null
+2: null
+-- schema metadata --
+pandas: '{"index_columns": [], "column_indexes": [], "columns": [{"name":' + 648

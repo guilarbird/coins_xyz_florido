@@ -1,0 +1,9 @@
+rules:
+  - category: "Tax"
+    keywords: ["tax", "imposto"]
+  - category: "Legal Fees"
+    keywords: ["legal", "advogado"]
+  - category: "OTC Settlement"
+    keywords: ["otc", "settlement"]
+  - category: "Operational Expense"
+    keywords: ["expense", "despesa"]

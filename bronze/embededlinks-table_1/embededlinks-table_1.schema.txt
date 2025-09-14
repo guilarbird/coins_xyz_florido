@@ -1,0 +1,3 @@
+table_1: string
+-- schema metadata --
+pandas: '{"index_columns": [], "column_indexes": [], "columns": [{"name":' + 198

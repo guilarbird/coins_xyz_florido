@@ -1,2 +1,9 @@
+duckdb
 pandas
+pyarrow
+numpy
 openpyxl
+plotly
+streamlit
+pyyaml
+rapidfuzz

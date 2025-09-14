@@ -1,0 +1,5 @@
+analy: string
+i: string
+unnamed_2: string
+-- schema metadata --
+pandas: '{"index_columns": [], "column_indexes": [], "columns": [{"name":' + 432

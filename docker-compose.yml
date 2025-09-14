@@ -1,0 +1,21 @@
+version: '3.7'
+
+services:
+  n8n:
+    image: n8nio/n8n
+    restart: always
+    ports:
+      - "5678:5678"
+    
+    # We are adding explicit basic authentication to solve the 401 error.
+    # This is the standard way to secure n8n.
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=florido_admin
+      - N8N_BASIC_AUTH_PASSWORD=your_super_secret_password
+      
+    volumes:
+      - ./n8n_data:/home/node/.n8n
+
+volumes:
+  n8n_data:

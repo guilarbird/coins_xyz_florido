@@ -1,0 +1,32 @@
+supp: string
+data: string
+sprd_brz: double
+spot: double
+braza: double
+spread: int64
+binance: double
+binance_10_bps: double
+spread1: double
+total_spread: double
+client_price: double
+ask_price: double
+vol_brl_given: string
+vol_usdt_taken: string
+usdt_binance: double
+fee_binance: double
+vol_usdt_given: string
+vol_brl_taken: string
+maturity: int64
+brl_supplier_cost: double
+brl_supplier_braza: string
+total_brl_buy_order_binance: string
+brl_supplier_binance: string
+profit: string
+base_currency: string
+quote_currency: string
+msg: string
+msg_pt-br: string
+spread_final: double
+spread_braza: double
+-- schema metadata --
+pandas: '{"index_columns": [], "column_indexes": [], "columns": [{"name":' + 3995

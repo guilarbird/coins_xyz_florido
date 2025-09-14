@@ -1,0 +1,24 @@
+fx_summary: string
+unnamed_1: string
+unnamed_2: string
+unnamed_3: string
+unnamed_4: string
+otc_summary: string
+unnamed_6: string
+unnamed_7: string
+unnamed_8: string
+unnamed_9: string
+unnamed_10: null
+tradedesk_summary: string
+unnamed_12: string
+unnamed_13: string
+unnamed_14: string
+unnamed_15: string
+unnamed_16: string
+unnamed_17: string
+unnamed_18: string
+usdbrl_ref: string
+55: string
+income_stays_in_brl_values_in_usd_are_approximations_due_to_usdbrl_rate: string
+-- schema metadata --
+pandas: '{"index_columns": [], "column_indexes": [], "columns": [{"name":' + 3015

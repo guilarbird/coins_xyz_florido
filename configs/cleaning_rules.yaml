@@ -1,0 +1,4 @@
+date_columns_regex: "(^data$|^date$|_date$|^dt$)"
+amount_columns_regex: "(^valor$|^amount$|^value$|_amount$|_valor$)"
+currency_symbols: ["R$", "$", "US$"]
+strip_thousand_sep: true
