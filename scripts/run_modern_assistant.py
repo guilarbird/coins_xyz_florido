@@ -8,6 +8,9 @@
 import os
 from openai import OpenAI
 import json
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- Securely load environment variables ---
 try:
@@ -15,7 +18,7 @@ try:
     dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env')
     load_dotenv(dotenv_path=dotenv_path)
 except ImportError:
-    print("Warning: python-dotenv not found. API key should be set as an environment variable.")
+    logging.warning("python-dotenv not found. API key should be set as an environment variable.")
 
 # ==============================================================================
 # CONFIGURATION
@@ -54,17 +57,17 @@ def setup_container(client):
             # Verify the container still exists on OpenAI's side
             try:
                 client.containers.retrieve(container_id)
-                print(f"Using existing and valid container: {container_id}")
+                logging.info(f"Using existing and valid container: {container_id}")
                 return container_id
             except Exception as e:
-                print(f"Warning: Found container ID {container_id}, but it's invalid or deleted. Recreating. Error: {e}")
+                logging.warning(f"Found container ID {container_id}, but it's invalid or deleted. Recreating. Error: {e}")
 
-    print("No valid container found. Creating a new one...")
+    logging.info("No valid container found. Creating a new one...")
     
     file_ids = []
     clean_data_dir = os.path.join(os.path.dirname(__file__), '..', 'clean_data')
     if not os.path.exists(clean_data_dir):
-        print(f"ERROR: Clean data directory not found at {clean_data_dir}")
+        logging.error(f"Clean data directory not found at {clean_data_dir}")
         return None
 
     for filename in os.listdir(clean_data_dir):
@@ -74,25 +77,25 @@ def setup_container(client):
                 try:
                     file = client.files.create(file=f, purpose='user_data')
                     file_ids.append(file.id)
-                    print(f"  - Uploaded {filename} (ID: {file.id})")
-                except Exception as e: print(f"  - FAILED to upload {filename}: {e}")
+                    logging.info(f"  - Uploaded {filename} (ID: {file.id})")
+                except Exception as e: logging.error(f"  - FAILED to upload {filename}: {e}")
     
-    if not file_ids: print("No files were uploaded. Cannot create container."); return None
+    if not file_ids: logging.error("No files were uploaded. Cannot create container."); return None
 
     try:
-        print("Creating container and pre-loading files...")
+        logging.info("Creating container and pre-loading files...")
         container = client.containers.create(name="Florido_Data_Analysis_Container", file_ids=file_ids)
         container_id = container.id
-        print(f"SUCCESS: Container created with ID: {container_id}")
+        logging.info(f"SUCCESS: Container created with ID: {container_id}")
         with open(CONTAINER_ID_FILE, 'w') as f: f.write(container_id)
         return container_id
     except Exception as e:
-        print(f"FATAL: Could not create container. Error: {e}")
+        logging.error(f"FATAL: Could not create container. Error: {e}")
         return None
 
 def run_conversation(client, container_id):
     """Starts an interactive chat session."""
-    print("\nStarting conversation with Florido (Responses API)...")
+    logging.info("\nStarting conversation with Florido (Responses API)...")
     session_id = "terminal_chat"
     
     while True:
@@ -102,7 +105,7 @@ def run_conversation(client, container_id):
         messages = load_conversation_history(session_id)
         messages.append({"role": "user", "content": [{"type": "input_text", "text": user_input}]})
         
-        print("Assistant is processing...")
+        logging.info("Assistant is processing...")
         try:
             # FINAL FIX APPLIED HERE:
             # The 'container' object requires a 'type' parameter.
@@ -128,20 +131,20 @@ def run_conversation(client, container_id):
                     for content in item.content:
                         if content.type == 'output_text': assistant_reply += content.text
             
-            print("\n--- Assistant's Response ---"); print(assistant_reply); print("--------------------------")
+            logging.info("\n--- Assistant's Response ---"); logging.info(assistant_reply); logging.info("--------------------------")
 
             messages.append({"role": "assistant", "content": assistant_reply})
             save_conversation_history(session_id, messages)
 
-        except Exception as e: print(f"\nAn error occurred: {e}")
+        except Exception as e: logging.error(f"\nAn error occurred: {e}")
 
 if __name__ == "__main__":
-    if not API_KEY or "sk-" not in API_KEY: print("ERROR: OPENAI_API_KEY is not configured correctly.")
-    elif "pmpt_..." in PROMPT_ID: print("ERROR: Please edit the script and set your `PROMPT_ID`.")
+    if not API_KEY or "sk-" not in API_KEY: logging.error("OPENAI_API_KEY is not configured correctly.")
+    elif "pmpt_..." in PROMPT_ID: logging.error("Please edit the script and set your `PROMPT_ID`.")
     else:
         client = OpenAI(api_key=API_KEY)
         active_container_id = setup_container(client)
         if active_container_id:
             run_conversation(client, active_container_id)
         else:
-            print("Could not start conversation without a valid container.")
+            logging.error("Could not start conversation without a valid container.")

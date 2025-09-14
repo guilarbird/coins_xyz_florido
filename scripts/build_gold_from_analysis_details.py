@@ -2,10 +2,22 @@
 import duckdb, pandas as pd, re
 from pathlib import Path
 from datetime import datetime
+import argparse
+import os
 
 DB = "warehouse/coins_xyz.duckdb"
 OUT = "gold"
 Path(OUT).mkdir(exist_ok=True)
+
+def get_year():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--year", type=int, help="Reporting year")
+    args = parser.parse_args()
+    if args.year:
+        return args.year
+    if os.getenv("REPORTING_YEAR"):
+        return int(os.getenv("REPORTING_YEAR"))
+    return datetime.now().year
 
 DETAILS_VIEW = "silver__analysis_analysis_5__analysis_analysis_5"   # Date;Entity;Amount (Sum)
 STATUS_VIEW  = "silver__analysis_analysis_2__analysis_analysis_2"    # Status; Completed; Projected; Grand
@@ -29,9 +41,7 @@ def richest_cell(row_vals):
     cells = [str(v) for v in row_vals if pd.notna(v) and str(v) != "None"]
     return max(cells, key=lambda s: s.count(";")) if cells else None
 
-con = duckdb.connect(DB)
-
-def parse_completed_from_details(view: str) -> pd.DataFrame:
+def parse_completed_from_details(con, view: str) -> pd.DataFrame:
     df = con.execute(f"SELECT * FROM {view}").df()
     out = []
     for _, row in df.iterrows():
@@ -53,7 +63,7 @@ def parse_completed_from_details(view: str) -> pd.DataFrame:
     print(f"[details] {view}: parsed {len(out)} Completed rows")
     return pd.DataFrame(out)
 
-def parse_projected_from_status(view: str) -> pd.DataFrame:
+def parse_projected_from_status(con, view: str) -> pd.DataFrame:
     df = con.execute(f"SELECT * FROM {view}").df()
     # Flatten rows into token lines
     lines = []
@@ -85,34 +95,40 @@ def parse_projected_from_status(view: str) -> pd.DataFrame:
     print(f"[status]  {view}: parsed {len(out)} Projected rows")
     return pd.DataFrame(out)
 
-completed = parse_completed_from_details(DETAILS_VIEW)
-projected = parse_projected_from_status(STATUS_VIEW)
+def main(year):
+    with duckdb.connect(DB) as con:
+        completed = parse_completed_from_details(con, DETAILS_VIEW)
+        projected = parse_projected_from_status(con, STATUS_VIEW)
 
-canon = pd.concat([completed, projected], ignore_index=True) if not completed.empty or not projected.empty else pd.DataFrame(columns=["tx_date","month","amount","status","source"])
-canon.to_parquet(f"{OUT}/expenses_canon.parquet", index=False)
+        canon = pd.concat([completed, projected], ignore_index=True) if not completed.empty or not projected.empty else pd.DataFrame(columns=["tx_date","month","amount","status","source"])
+        canon.to_parquet(f"{OUT}/expenses_canon.parquet", index=False)
 
-# Bars (month, status)
-bars = (canon.groupby(["month","status"], as_index=False)["amount"].sum()
-             .rename(columns={"amount":"total"})
-             .sort_values(["month","status"]))
-if not bars.empty:
-    bars["total"] = bars["total"].round(2)
-    bars.to_csv(f"{OUT}/expenses_per_month_status.csv", index=False)
-    bars.to_parquet(f"{OUT}/expenses_per_month_status.parquet", index=False)
+    # Bars (month, status)
+    bars = (canon.groupby(["month","status"], as_index=False)["amount"].sum()
+                 .rename(columns={"amount":"total"})
+                 .sort_values(["month","status"]))
+    if not bars.empty:
+        bars["total"] = bars["total"].round(2)
+        bars.to_csv(f"{OUT}/expenses_per_month_status.csv", index=False)
+        bars.to_parquet(f"{OUT}/expenses_per_month_status.parquet", index=False)
 
-# Cumulative 2025
-c2025 = canon[canon["month"].apply(lambda d: getattr(d, "year", 0) == 2025)]
-if not c2025.empty:
-    m = (c2025.pivot_table(index="month", columns="status", values="amount", aggfunc="sum")
-              .fillna(0).sort_index())
-    comp = m["Completed"] if "Completed" in m.columns else pd.Series(0.0, index=m.index)
-    proj = m["Projected"] if "Projected" in m.columns else pd.Series(0.0, index=m.index)
-    out = pd.DataFrame({
-        "month":        m.index,
-        "cum_completed": comp.cumsum().values,
-        "cum_total":     (comp + proj).cumsum().values
-    })
-    out.to_csv(f"{OUT}/expenses_cumulative_2025.csv", index=False, float_format="%.2f")
-    out.to_parquet(f"{OUT}/expenses_cumulative_2025.parquet", index=False)
+    # Cumulative year
+    cy = canon[canon["month"].apply(lambda d: getattr(d, "year", 0) == year)]
+    if not cy.empty:
+        m = (cy.pivot_table(index="month", columns="status", values="amount", aggfunc="sum")
+                  .fillna(0).sort_index())
+        comp = m["Completed"] if "Completed" in m.columns else pd.Series(0.0, index=m.index)
+        proj = m["Projected"] if "Projected" in m.columns else pd.Series(0.0, index=m.index)
+        out = pd.DataFrame({
+            "month":        m.index,
+            "cum_completed": comp.cumsum().values,
+            "cum_total":     (comp + proj).cumsum().values
+        })
+        out.to_csv(f"{OUT}/expenses_cumulative_{year}.csv", index=False, float_format="%.2f")
+        out.to_parquet(f"{OUT}/expenses_cumulative_{year}.parquet", index=False)
 
-print("[gold] rebuilt from details (Completed) + status (Projected)")
+    print("[gold] rebuilt from details (Completed) + status (Projected)")
+
+if __name__ == "__main__":
+    year = get_year()
+    main(year)

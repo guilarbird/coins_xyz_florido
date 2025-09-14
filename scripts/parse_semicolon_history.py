@@ -96,25 +96,25 @@ def parse_one_view(df: pd.DataFrame, viewname: str) -> pd.DataFrame:
     return parsed
 
 def main():
-    con = duckdb.connect(DB)
-    tables = {t[0] for t in con.execute("SHOW TABLES").fetchall()}
+    with duckdb.connect(DB) as con:
+        tables = {t[0] for t in con.execute("SHOW TABLES").fetchall()}
 
-    frames = []
-    for v in RAW_CANDIDATES:
-        if v in tables:
-            df = con.execute(f"SELECT * FROM {v}").df()
-            frames.append(parse_one_view(df, v))
-        else:
-            print(f"[parse] ausente: {v}")
+        frames = []
+        for v in RAW_CANDIDATES:
+            if v in tables:
+                df = con.execute(f"SELECT * FROM {v}").df()
+                frames.append(parse_one_view(df, v))
+            else:
+                print(f"[parse] ausente: {v}")
 
-    if not frames:
-        raise SystemExit("Nenhuma view candidata encontrada.")
+        if not frames:
+            raise SystemExit("Nenhuma view candidata encontrada.")
 
-    parsed = pd.concat(frames, ignore_index=True) if len(frames) > 1 else frames[0]
-    # drop linhas totalmente vazias e duplicatas
-    parsed = parsed.dropna(how="all").drop_duplicates()
-    parsed.to_parquet(OUT, index=False)
-    print(f"[parse] wrote {OUT} cols={list(parsed.columns)} rows={len(parsed)}")
+        parsed = pd.concat(frames, ignore_index=True) if len(frames) > 1 else frames[0]
+        # drop linhas totalmente vazias e duplicatas
+        parsed = parsed.dropna(how="all").drop_duplicates()
+        parsed.to_parquet(OUT, index=False)
+        print(f"[parse] wrote {OUT} cols={list(parsed.columns)} rows={len(parsed)}")
 
 if __name__ == "__main__":
     main()

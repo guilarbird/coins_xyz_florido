@@ -1,11 +1,24 @@
 #!/usr/bin/env python3
 import pandas as pd, duckdb, yaml, re
 from pathlib import Path
+from datetime import datetime
+import argparse
+import os
 
 SILVER = Path("silver/expenses_details.parquet")
 GOLD = Path("gold")
 CFG = Path("configs/category_rules.yaml")
 GOLD.mkdir(exist_ok=True, parents=True)
+
+def get_year():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--year", type=int, help="Reporting year")
+    args = parser.parse_args()
+    if args.year:
+        return args.year
+    if os.getenv("REPORTING_YEAR"):
+        return int(os.getenv("REPORTING_YEAR"))
+    return datetime.now().year
 
 def load_rules():
     if CFG.exists():
@@ -39,7 +52,7 @@ def brl_num(x: str) -> float:
     try: return round(float(x),2)
     except: return 0.0
 
-def build_gold():
+def build_gold(year):
     if not SILVER.exists():
         raise SystemExit("Run scripts/build_silver_details.py first (silver/expenses_details.parquet missing).")
     df = pd.read_parquet(SILVER)
@@ -60,14 +73,14 @@ def build_gold():
     bars.to_parquet(GOLD/"expenses_per_month_status.parquet", index=False)
     bars.to_csv(GOLD/"expenses_per_month_status.csv", index=False)
 
-    m2025 = tx[tx["month"].dt.year==2025]
-    if not m2025.empty:
-        p = (m2025.pivot_table(index="month", columns="status", values="amount", aggfunc="sum")
+    my = tx[tx["month"].dt.year==year]
+    if not my.empty:
+        p = (my.pivot_table(index="month", columns="status", values="amount", aggfunc="sum")
                      .fillna(0).sort_index())
         p["cum_completed"] = p.get("Completed",0).cumsum()
         p["cum_total"]     = (p.get("Completed",0)+p.get("Projected",0)).cumsum()
-        p.reset_index()[["month","cum_completed","cum_total"]].to_parquet(GOLD/"expenses_cumulative_2025.parquet", index=False)
-        p.reset_index()[["month","cum_completed","cum_total"]].to_csv(GOLD/"expenses_cumulative_2025.csv", index=False)
+        p.reset_index()[["month","cum_completed","cum_total"]].to_parquet(GOLD/f"expenses_cumulative_{year}.parquet", index=False)
+        p.reset_index()[["month","cum_completed","cum_total"]].to_csv(GOLD/f"expenses_cumulative_{year}.csv", index=False)
 
     status_csv = next((p for p in Path("raw_data").glob("*Analysis*2*.csv")), None)
     if status_csv:
@@ -98,16 +111,17 @@ def build_gold():
         except Exception as e:
             print(f"[reconcile] skipped pivot reconciliation: {e}")
 
-    con = duckdb.connect("warehouse/coins_xyz.duckdb")
-    con.execute("""
-    CREATE OR REPLACE VIEW gold__expenses_tx AS SELECT * FROM read_parquet('gold/expenses_tx.parquet');
-    CREATE OR REPLACE VIEW gold__expenses_per_month_status AS SELECT * FROM read_parquet('gold/expenses_per_month_status.parquet');
-    """)
-    if (GOLD/"expenses_cumulative_2025.parquet").exists():
-        con.execute("CREATE OR REPLACE VIEW gold__expenses_cumulative_2025 AS SELECT * FROM read_parquet('gold/expenses_cumulative_2025.parquet');")
-        print("[gold] wrote gold/*.parquet & registered views: gold__expenses_tx, gold__expenses_per_month_status, gold__expenses_cumulative_2025")
-    else:
-        print("[gold] wrote gold/*.parquet & registered views: gold__expenses_tx, gold__expenses_per_month_status")
+    with duckdb.connect("warehouse/coins_xyz.duckdb") as con:
+        con.execute("""
+        CREATE OR REPLACE VIEW gold__expenses_tx AS SELECT * FROM read_parquet('gold/expenses_tx.parquet');
+        CREATE OR REPLACE VIEW gold__expenses_per_month_status AS SELECT * FROM read_parquet('gold/expenses_per_month_status.parquet');
+        """)
+        if (GOLD/f"expenses_cumulative_{year}.parquet").exists():
+            con.execute(f"CREATE OR REPLACE VIEW gold__expenses_cumulative_{year} AS SELECT * FROM read_parquet('gold/expenses_cumulative_{year}.parquet');")
+            print(f"[gold] wrote gold/*.parquet & registered views: gold__expenses_tx, gold__expenses_per_month_status, gold__expenses_cumulative_{year}")
+        else:
+            print("[gold] wrote gold/*.parquet & registered views: gold__expenses_tx, gold__expenses_per_month_status")
 
 if __name__ == "__main__":
-    build_gold()
+    year = get_year()
+    build_gold(year)

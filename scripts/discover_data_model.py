@@ -7,6 +7,9 @@
 
 import pandas as pd
 import os
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def profile_csv_file(file_path):
     """
@@ -58,9 +61,9 @@ def profile_csv_file(file_path):
         return {"status": "Failed", "error": str(e)}
 
 if __name__ == "__main__":
-    print("==============================================")
-    print("Starting Data Model Discovery Script v2.0")
-    print("==============================================")
+    logging.info("==============================================")
+    logging.info("Starting Data Model Discovery Script v2.0")
+    logging.info("==============================================")
 
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     RAW_DATA_DIR = os.path.join(BASE_DIR, '..', 'raw_data')
@@ -74,10 +77,10 @@ if __name__ == "__main__":
             file_path = os.path.join(RAW_DATA_DIR, filename)
             
             if os.path.getsize(file_path) == 0:
-                print(f"Skipping empty file: {filename}")
+                logging.warning(f"Skipping empty file: {filename}")
                 continue
 
-            print(f"Profiling file: {filename}...")
+            logging.info(f"Profiling file: {filename}...")
             profile = profile_csv_file(file_path)
 
             report_content += f"## File: `{filename}`\n\n"
@@ -98,6 +101,6 @@ if __name__ == "__main__":
     with open(REPORT_FILE_PATH, 'w', encoding='utf-8') as f:
         f.write(report_content)
 
-    print("\n==============================================")
-    print(f"Data discovery complete. Report saved to: {REPORT_FILE_PATH}")
-    print("==============================================")
+    logging.info("\n==============================================")
+    logging.info(f"Data discovery complete. Report saved to: {REPORT_FILE_PATH}")
+    logging.info("==============================================")

@@ -1,11 +1,26 @@
 #!/usr/bin/env python3
 import pandas as pd, duckdb, os, re
 from pathlib import Path
+from datetime import datetime
+import argparse
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 OUT = Path("gold"); OUT.mkdir(exist_ok=True)
-OVR = Path("overrides/expenses_2025.csv")
 DB  = "warehouse/coins_xyz.duckdb"
 
-def write_gold(df):
+def get_year():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--year", type=int, help="Reporting year")
+    args = parser.parse_args()
+    if args.year:
+        return args.year
+    if os.getenv("REPORTING_YEAR"):
+        return int(os.getenv("REPORTING_YEAR"))
+    return datetime.now().year
+
+def write_gold(df, year):
     # long canon
     canon = (
         pd.concat([
@@ -26,18 +41,18 @@ def write_gold(df):
     per.to_parquet(OUT/"expenses_per_month_status.parquet", index=False)
     per.to_csv(OUT/"expenses_per_month_status.csv", index=False)
 
-    # cumulative 2025
-    y2025 = df[df["month"].dt.year==2025].copy()
-    y2025["cum_completed"] = y2025["completed"].cumsum()
-    y2025["cum_total"]     = (y2025["completed"] + y2025["projected"]).cumsum()
-    y2025[["month","cum_completed","cum_total"]].to_parquet(OUT/"expenses_cumulative_2025.parquet", index=False)
-    y2025[["month","cum_completed","cum_total"]].to_csv(OUT/"expenses_cumulative_2025.csv", index=False)
+    # cumulative year
+    y = df[df["month"].dt.year==year].copy()
+    y["cum_completed"] = y["completed"].cumsum()
+    y["cum_total"]     = (y["completed"] + y["projected"]).cumsum()
+    y[["month","cum_completed","cum_total"]].to_parquet(OUT/f"expenses_cumulative_{year}.parquet", index=False)
+    y[["month","cum_completed","cum_total"]].to_csv(OUT/f"expenses_cumulative_{year}.csv", index=False)
 
-def parse_visuals_fallback():
+def parse_visuals_fallback(year):
     # very light fallback: try to read the “status” pivot from analysis_table_1
-    con = duckdb.connect(DB)
     try:
-        df = con.execute("SELECT * FROM silver__analysis_table_1__analysis_table_1").df()
+        with duckdb.connect(DB) as con:
+            df = con.execute("SELECT * FROM silver__analysis_table_1__analysis_table_1").df()
     except Exception:
         return None
     lines = []
@@ -50,8 +65,8 @@ def parse_visuals_fallback():
     rows=[]
     for toks in lines:
         try:
-            m = re.search(r"2025-(\w+)", " ".join(toks)).group(1).strip(".").lower()
-            month = pd.Timestamp(year=2025, month=month_map[m], day=1)
+            m = re.search(fr"{year}-(\w+)", " ".join(toks)).group(1).strip(".").lower()
+            month = pd.Timestamp(year=year, month=month_map[m], day=1)
             # pick the two biggest numbers on the line as completed/projected candidates
             nums = []
             for t in toks:
@@ -71,17 +86,19 @@ def parse_visuals_fallback():
             .sort_values("month"))
     return df
 
-def main():
-    if OVR.exists():
-        df = pd.read_csv(OVR, parse_dates=["month"])
+def main(year):
+    ovr = Path(f"overrides/expenses_{year}.csv")
+    if ovr.exists():
+        df = pd.read_csv(ovr, parse_dates=["month"])
     else:
-        df = parse_visuals_fallback()
+        df = parse_visuals_fallback(year)
         if df is None or df.empty:
             raise SystemExit("No override and could not parse visuals.")
     # ensure floats
     for c in ("completed","projected"): df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
-    write_gold(df)
-    print("[gold] rebuilt from", "override" if OVR.exists() else "visuals fallback")
+    write_gold(df, year)
+    logging.info(f"[gold] rebuilt from {'override' if ovr.exists() else 'visuals fallback'}")
 
 if __name__ == "__main__":
-    main()
+    year = get_year()
+    main(year)

@@ -1,9 +1,21 @@
 #!/usr/bin/env python3
 import sys, re, hashlib, numpy as np, pandas as pd
 from pathlib import Path
+from datetime import datetime
+import os
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 XLS = sys.argv[1] if len(sys.argv)>1 else "01 Expenses Management.xlsx"
 OUT = Path("gold"); OUT.mkdir(exist_ok=True)
+
+def get_year():
+    if len(sys.argv) > 2:
+        return int(sys.argv[2])
+    if os.getenv("REPORTING_YEAR"):
+        return int(os.getenv("REPORTING_YEAR"))
+    return datetime.now().year
 
 def brl(x):
     if x is None or (isinstance(x,float) and np.isnan(x)): return None
@@ -37,7 +49,7 @@ def hash_id(row):
         ["tx_date","amount_brl","description","merchant","entity","bank"])
     return hashlib.sha1(key.encode()).hexdigest()[:16]
 
-def main():
+def main(year):
     if not Path(XLS).exists():
         raise SystemExit(f"Workbook not found: {XLS}")
     sheets=pd.read_excel(XLS, sheet_name=None, dtype=str)
@@ -66,14 +78,16 @@ def main():
             .rename(columns={"amount_brl":"total"}))
     bars.to_parquet(OUT/"expenses_per_month_status.parquet", index=False)
 
-    m2025=tx[tx["month"].dt.year==2025]
-    if not m2025.empty:
-        p=(m2025.pivot_table(index="month",columns="status",values="amount_brl",aggfunc="sum")
+    my=tx[tx["month"].dt.year==year]
+    if not my.empty:
+        p=(my.pivot_table(index="month",columns="status",values="amount_brl",aggfunc="sum")
               .fillna(0).sort_index())
         p["cum_completed"]=p.get("Completed",0).cumsum()
         p["cum_total"]=(p.get("Completed",0)+p.get("Projected",0)).cumsum()
         p.reset_index()[["month","cum_completed","cum_total"]].to_parquet(
-            OUT/"expenses_cumulative_2025.parquet", index=False)
+            OUT/f"expenses_cumulative_{year}.parquet", index=False)
 
-    print("[gold] wrote gold/expenses_tx.parquet and updated monthly parquet files.")
-if __name__=="__main__": main()
+    logging.info("[gold] wrote gold/expenses_tx.parquet and updated monthly parquet files.")
+if __name__=="__main__":
+    year = get_year()
+    main(year)

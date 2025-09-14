@@ -3,6 +3,9 @@ import os
 import gspread
 from gspread_dataframe import set_with_dataframe
 from google.oauth2.service_account import Credentials
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Function to authenticate with Google Sheets
 def authenticate_gspread():
@@ -47,4 +50,4 @@ if __name__ == "__main__":
     set_with_dataframe(trade_history_worksheet, trade_history_df)
     set_with_dataframe(system_access_worksheet, system_access_df)
 
-    print("Successfully created the Google Sheets workbook with the new data model.")
+    logging.info("Successfully created the Google Sheets workbook with the new data model.")

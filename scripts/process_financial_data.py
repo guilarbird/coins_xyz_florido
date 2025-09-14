@@ -26,7 +26,14 @@ def find_header_and_load(file_path, header_keyword):
 
 def normalize_columns(df):
     """Standardizes column names to a common format."""
-    # Add your column normalization logic here
+    cols = df.columns
+    new_cols = []
+    for col in cols:
+        new_col = str(col).strip().lower()
+        new_col = ''.join(e for e in new_col if e.isalnum() or e == ' ')
+        new_col = new_col.replace(' ', '_')
+        new_cols.append(new_col)
+    df.columns = new_cols
     return df
 
 def categorize_transaction(description, rules):

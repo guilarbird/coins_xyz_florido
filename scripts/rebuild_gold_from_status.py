@@ -1,8 +1,22 @@
 #!/usr/bin/env python3
 import duckdb, pandas as pd, re
 from pathlib import Path
+from datetime import datetime
+import argparse
+import os
+
 DB="warehouse/coins_xyz.duckdb"
 OUT="gold"; Path(OUT).mkdir(exist_ok=True)
+
+def get_year():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--year", type=int, help="Reporting year")
+    args = parser.parse_args()
+    if args.year:
+        return args.year
+    if os.getenv("REPORTING_YEAR"):
+        return int(os.getenv("REPORTING_YEAR"))
+    return datetime.now().year
 
 VIEWS = [
   "silver__analysis_analysis_2__analysis_analysis_2",
@@ -26,7 +40,7 @@ def parse_brl(s):
         return float(s) if s not in ("",".","-","--") else None
     except: return None
 
-def try_blocks(lines):
+def try_blocks(lines, year):
     """encontra todos os blocos Status -> Date/Amount -> linhas dd-mm-yyyy"""
     blocks=[]
     n=len(lines)
@@ -63,60 +77,61 @@ def try_blocks(lines):
                 k+=1
             if rows:
                 df=pd.DataFrame(rows)
-                # score: meses em 2025 + soma completed (preferir o painel principal)
-                score = (df["month"].map(lambda d:d.year==2025).sum(), df["completed"].sum())
+                # score: meses em year + soma completed (preferir o painel principal)
+                score = (df["month"].map(lambda d:d.year==year).sum(), df["completed"].sum())
                 blocks.append((score, df))
     return blocks
 
-def main():
-    con=duckdb.connect(DB)
-    all_lines=[]
-    for v in VIEWS:
-        try:
-            df=con.execute(f"SELECT * FROM {v}").df()
-        except: 
-            continue
-        all_lines.extend(list(cells(df)))
+def main(year):
+    with duckdb.connect(DB) as con:
+        all_lines=[]
+        for v in VIEWS:
+            try:
+                df=con.execute(f"SELECT * FROM {v}").df()
+            except: 
+                continue
+            all_lines.extend(list(cells(df)))
 
-    blocks=try_blocks(all_lines)
-    if not blocks:
-        raise SystemExit("Nenhum bloco Status encontrado. Confirme se a planilha foi ingerida.")
+        blocks=try_blocks(all_lines, year)
+        if not blocks:
+            raise SystemExit("Nenhum bloco Status encontrado. Confirme se a planilha foi ingerida.")
 
-    # escolhe o bloco com melhor score
-    blocks.sort(key=lambda x: x[0], reverse=True)
-    chosen = blocks[0][1].copy()
-    chosen = chosen.groupby("month", as_index=False).sum()
+        # escolhe o bloco com melhor score
+        blocks.sort(key=lambda x: x[0], reverse=True)
+        chosen = blocks[0][1].copy()
+        chosen = chosen.groupby("month", as_index=False).sum()
 
-    # escreve debug pra conferência
-    dbg=chosen.copy(); dbg["block_id"]=0
-    dbg.to_csv(f"{OUT}/debug_status_blocks.csv", index=False)
+        # escreve debug pra conferência
+        dbg=chosen.copy(); dbg["block_id"]=0
+        dbg.to_csv(f"{OUT}/debug_status_blocks.csv", index=False)
 
-    # gold canonical
-    canon=[]
-    for _,r in chosen.iterrows():
-        canon.append({"tx_date":r["month"],"month":r["month"],"amount":r["completed"],"status":"Completed","source":"analysis_status"})
-        if r["projected"] and r["projected"]!=0:
-            canon.append({"tx_date":r["month"],"month":r["month"],"amount":r["projected"],"status":"Projected","source":"analysis_status"})
-    canon=pd.DataFrame(canon)
-    canon.to_parquet(f"{OUT}/expenses_canon.parquet", index=False)
+        # gold canonical
+        canon=[]
+        for _,r in chosen.iterrows():
+            canon.append({"tx_date":r["month"],"month":r["month"],"amount":r["completed"],"status":"Completed","source":"analysis_status"})
+            if r["projected"] and r["projected"]!=0:
+                canon.append({"tx_date":r["month"],"month":r["month"],"amount":r["projected"],"status":"Projected","source":"analysis_status"})
+        canon=pd.DataFrame(canon)
+        canon.to_parquet(f"{OUT}/expenses_canon.parquet", index=False)
 
-    # barras (month,status)
-    bars=(canon.groupby(["month","status"], as_index=False)["amount"]
-                .sum().rename(columns={"amount":"total"}))
-    bars.to_parquet(f"{OUT}/expenses_per_month_status.parquet", index=False)
-    bars.to_csv(f"{OUT}/expenses_per_month_status.csv", index=False)
+        # barras (month,status)
+        bars=(canon.groupby(["month","status"], as_index=False)["amount"]
+                    .sum().rename(columns={"amount":"total"}))
+        bars.to_parquet(f"{OUT}/expenses_per_month_status.parquet", index=False)
+        bars.to_csv(f"{OUT}/expenses_per_month_status.csv", index=False)
 
-    # acumulado 2025
-    c2025=canon[canon["month"].map(lambda d:getattr(d,"year",0)==2025)].copy()
-    if not c2025.empty:
-        p = (c2025.pivot_table(index="month", columns="status", values="amount", aggfunc="sum")
-                   .fillna(0).sort_index())
-        p["cum_completed"]=p.get("Completed",0).cumsum()
-        p["cum_total"]=(p.get("Completed",0)+p.get("Projected",0)).cumsum()
-        out=p.reset_index()[["month","cum_completed","cum_total"]]
-        out.to_parquet(f"{OUT}/expenses_cumulative_2025.parquet", index=False)
-        out.to_csv(f"{OUT}/expenses_cumulative_2025.csv", index=False)
+        # acumulado year
+        cy=canon[canon["month"].map(lambda d:getattr(d,"year",0)==year)].copy()
+        if not cy.empty:
+            p = (cy.pivot_table(index="month", columns="status", values="amount", aggfunc="sum")
+                       .fillna(0).sort_index())
+            p["cum_completed"]=p.get("Completed",0).cumsum()
+            p["cum_total"]=(p.get("Completed",0)+p.get("Projected",0)).cumsum()
+            out=p.reset_index()[["month","cum_completed","cum_total"]]
+            out.to_parquet(f"{OUT}/expenses_cumulative_{year}.parquet", index=False)
+            out.to_csv(f"{OUT}/expenses_cumulative_{year}.csv", index=False)
 
-    print("[gold] rebuilt from best Status-block. Check gold/expenses_per_month_status.csv e gold/expenses_cumulative_2025.csv")
+        print(f"[gold] rebuilt from best Status-block. Check gold/expenses_per_month_status.csv e gold/expenses_cumulative_{year}.csv")
 if __name__=="__main__":
-    main()
+    year = get_year()
+    main(year)

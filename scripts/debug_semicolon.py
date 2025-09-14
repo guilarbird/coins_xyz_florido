@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 import duckdb, pandas as pd
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 DB="warehouse/coins_xyz.duckdb"
 VIEWS=[
@@ -11,18 +14,19 @@ VIEWS=[
 
 def show(v):
     try:
-        df = duckdb.connect(DB).execute(f"SELECT * FROM {v}").df()
+        with duckdb.connect(DB) as con:
+            df = con.execute(f"SELECT * FROM {v}").df()
     except Exception as e:
-        print(f"\n[{v}] erro:", e); return
-    print(f"\n[{v}] shape={df.shape} cols={list(df.columns)}")
+        logging.error(f"\n[{v}] erro:", exc_info=e); return
+    logging.info(f"\n[{v}] shape={df.shape} cols={list(df.columns)}")
     # imprime 10 linhas por coluna, tokenizando por ';'
     for col in df.columns:
-        print(f"\n  >> coluna: {col}")
+        logging.info(f"\n  >> coluna: {col}")
         for i, val in list(df[col].head(10).items()):
             s = "" if pd.isna(val) else str(val)
             toks = [p.strip() for p in s.split(";")]
-            print(f"    {i:>3}: {toks}")
-    print("-"*60)
+            logging.info(f"    {i:>3}: {toks}")
+    logging.info("-"*60)
 
 for v in VIEWS:
     show(v)

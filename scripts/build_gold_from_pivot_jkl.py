@@ -1,11 +1,26 @@
 #!/usr/bin/env python3
 import duckdb, pandas as pd, re
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime
+import argparse
+import os
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 DB  = "warehouse/coins_xyz.duckdb"
 SRC = "silver__analysis_analysis_2__analysis_analysis_2"   # Analysis tab (semicolon soup)
 OUT = Path("gold"); OUT.mkdir(exist_ok=True)
+
+def get_year():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--year", type=int, help="Reporting year")
+    args = parser.parse_args()
+    if args.year:
+        return args.year
+    if os.getenv("REPORTING_YEAR"):
+        return int(os.getenv("REPORTING_YEAR"))
+    return datetime.now().year
 
 def parse_brl(x: str) -> float | None:
     if x is None: return None
@@ -31,8 +46,8 @@ def pick_rich_cell(row_vals):
     return max(cells, key=lambda s: s.count(";")) if cells else None
 
 def read_lines_from_source() -> list[list[str]]:
-    con = duckdb.connect(DB)
-    df = con.execute(f"SELECT * FROM {SRC}").df()
+    with duckdb.connect(DB) as con:
+        df = con.execute(f"SELECT * FROM {SRC}").df()
     lines = []
     for _, row in df.iterrows():
         cell = pick_rich_cell(row.values)
@@ -79,7 +94,7 @@ def extract_pivot_JKL(lines: list[list[str]]) -> pd.DataFrame:
 
     return pd.DataFrame(rows).sort_values("month")
 
-def main():
+def main(year):
     lines = read_lines_from_source()
     table = extract_pivot_JKL(lines)
 
@@ -95,27 +110,31 @@ def main():
     # 2) Bars per month/status
     bars = canon.groupby(["month","status"], as_index=False)["amount"].sum().rename(columns={"amount":"total"})
 
-    # 3) Cumulative 2025
-    c25 = table[table["month"].dt.year==2025].copy()
+    # 3) Cumulative year
+    cy = table[table["month"].dt.year==year].copy()
     # make sure both columns exist as Series
-    if "Completed" not in c25: c25["Completed"] = pd.Series(dtype=float)
-    if "Projected" not in c25: c25["Projected"] = pd.Series(dtype=float)
-    c25 = c25.sort_values("month")
+    if "Completed" not in cy: cy["Completed"] = pd.Series(dtype=float)
+    if "Projected" not in cy: cy["Projected"] = pd.Series(dtype=float)
+    cy = cy.sort_values("month")
     cum = pd.DataFrame({
-        "month": c25["month"],
-        "cum_completed": c25["Completed"].cumsum(),
-        "cum_total": (c25["Completed"] + c25["Projected"]).cumsum(),
+        "month": cy["month"],
+        "cum_completed": cy["Completed"].cumsum(),
+        "cum_total": (cy["Completed"] + cy["Projected"]).cumsum(),
     })
 
     # Write parquet + csv for convenience
     canon[["tx_date","month","amount","status"]].assign(category=None, description=None, source=SRC)\
         .to_parquet(OUT/"expenses_canon.parquet", index=False)
     bars.to_parquet(OUT/"expenses_per_month_status.parquet", index=False)
-    cum.to_parquet(OUT/"expenses_cumulative_2025.parquet", index=False)
+    cum.to_parquet(OUT/f"expenses_cumulative_{year}.parquet", index=False)
 
     bars.to_csv(OUT/"expenses_per_month_status.csv", index=False)
-    cum.to_csv(OUT/"expenses_cumulative_2025.csv", index=False)
+    cum.to_csv(OUT/f"expenses_cumulative_{year}.csv", index=False)
 
     # Sanity print
-    print("[OK] gold rebuilt from Analysis pivot (J:K:L).")
-    print(bars.to_string(index=False))
+    logging.info("[OK] gold rebuilt from Analysis pivot (J:K:L).")
+    logging.info(bars.to_string(index=False))
+
+if __name__ == "__main__":
+    year = get_year()
+    main(year)

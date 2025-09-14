@@ -2,10 +2,22 @@
 import duckdb, pandas as pd, re
 from datetime import datetime
 from pathlib import Path
+import argparse
+import os
 
 DB="warehouse/coins_xyz.duckdb"
 OUT="gold"
 Path(OUT).mkdir(exist_ok=True)
+
+def get_year():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--year", type=int, help="Reporting year")
+    args = parser.parse_args()
+    if args.year:
+        return args.year
+    if os.getenv("REPORTING_YEAR"):
+        return int(os.getenv("REPORTING_YEAR"))
+    return datetime.now().year
 
 # main "Expenses" visual (+ optional card visual if you decide incluir)
 VIEWS = [
@@ -25,9 +37,9 @@ def richest_cell(row_vals):
     return max(cells, key=lambda s:s.count(";")) if cells else None
 
 def extract_from_view(view)->pd.DataFrame:
-    con=duckdb.connect(DB)
     try:
-        df=con.execute(f"SELECT * FROM {view}").df()
+        with duckdb.connect(DB) as con:
+            df=con.execute(f"SELECT * FROM {view}").df()
     except Exception:
         return pd.DataFrame()
 
@@ -85,7 +97,7 @@ def extract_from_view(view)->pd.DataFrame:
 
     return pd.DataFrame(rows)
 
-def main():
+def main(year):
     frames=[extract_from_view(v) for v in VIEWS]
     canon=pd.concat([f for f in frames if not f.empty], ignore_index=True) if any([not f.empty for f in frames]) else pd.DataFrame()
     if canon.empty:
@@ -101,13 +113,17 @@ def main():
     bars.to_csv(f"{OUT}/expenses_per_month_status.csv", index=False, float_format="%.2f")
     bars.to_parquet(f"{OUT}/expenses_per_month_status.parquet", index=False)
 
-    # cumulative 2025
-    c2025 = canon[canon["month"].apply(lambda d: getattr(d,"year",0)==2025)]
-    if not c2025.empty:
-        m = c2025.pivot_table(index="month", columns="status", values="amount", aggfunc="sum").fillna(0).sort_index()
+    # cumulative year
+    cy = canon[canon["month"].apply(lambda d: getattr(d,"year",0)==year)]
+    if not cy.empty:
+        m = cy.pivot_table(index="month", columns="status", values="amount", aggfunc="sum").fillna(0).sort_index()
         m["cum_completed"] = m.get("Completed",0).cumsum()
         m["cum_total"]     = (m.get("Completed",0)+m.get("Projected",0)).cumsum()
-        m.reset_index()[["month","cum_completed","cum_total"]].to_csv(f"{OUT}/expenses_cumulative_2025.csv", index=False, float_format="%.2f")
-        m.reset_index()[["month","cum_completed","cum_total"]].to_parquet(f"{OUT}/expenses_cumulative_2025.parquet", index=False)
+        m.reset_index()[["month","cum_completed","cum_total"]].to_csv(f"{OUT}/expenses_cumulative_{year}.csv", index=False, float_format="%.2f")
+        m.reset_index()[["month","cum_completed","cum_total"]].to_parquet(f"{OUT}/expenses_cumulative_{year}.parquet", index=False)
 
     print("[visuals] gold rebuilt from Analysis.")
+
+if __name__ == "__main__":
+    year = get_year()
+    main(year)

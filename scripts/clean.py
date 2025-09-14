@@ -2,6 +2,9 @@
 import re, yaml, polars as pl
 from pathlib import Path
 from datetime import datetime
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 BRONZE="bronze"; SILVER="silver"; LOGS="logs"
 Path(LOGS).mkdir(exist_ok=True)
@@ -64,20 +67,20 @@ def tidy(df: pl.DataFrame) -> pl.DataFrame:
     return out
 
 def process(p_in: Path, p_out: Path):
-    print("Cleaning:", p_in)
+    logging.info(f"Cleaning: {p_in}")
     try:
         df = read_parquet_robust(p_in)
     except BaseException as e:
-        print("SKIP (leitura falhou):", p_in, "|", e)
+        logging.warning(f"SKIP (leitura falhou): {p_in} | {e}")
         return
     try:
         clean = tidy(df)
         p_out.parent.mkdir(parents=True, exist_ok=True)
         clean.write_parquet(p_out)
-        print("Clean →", p_out)
+        logging.info(f"Clean → {p_out}")
     except BaseException as e:
         log_fail(p_in, e)
-        print("SKIP (transform falhou):", p_in, "|", e)
+        logging.warning(f"SKIP (transform falhou): {p_in} | {e}")
 
 def main():
     for p in Path(BRONZE).glob("**/*.parquet"):
